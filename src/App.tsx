@@ -19,19 +19,19 @@ import { IoLocationSharp, IoCalendarOutline } from "react-icons/io5";
 // ============================================
 interface OpenMeteoResponse {
     daily: {
-        time: string[]; //時刻
-        weather_code: number[]; //天気
-        temperature_2m_max: number[]; //最高気温
-        temperature_2m_min: number[]; //最低気温
-        sunrise: string[]; //日の出
-        sunset: string[]; //日の入り
-        uv_index_max: number[]; //紫外線
-        precipitation_probability_max: number[]; //降水確率
-        wind_speed_10m_max: number[]; //最大風速
+        time: string[];
+        weather_code: number[];
+        temperature_2m_max: number[];
+        temperature_2m_min: number[];
+        sunrise: string[];
+        sunset: string[];
+        uv_index_max: number[];
+        precipitation_probability_max: number[];
+        wind_speed_10m_max: number[];
     };
     hourly: {
-        visibility: number[]; //一時間あたり視界
-        wind_speed_10m: number[]; //一時間あたり平均風速
+        visibility: number[];
+        wind_speed_10m: number[];
     };
 }
 
@@ -46,6 +46,14 @@ interface TomorrowSummary {
     sunrise: string;
     sunset: string;
     visibilityAvg: number;
+}
+
+interface DailyForecast {
+    date: string;
+    weatherCode: number;
+    tempMax: number;
+    tempMin: number;
+    precipProb: number;
 }
 
 // ============================================
@@ -106,7 +114,7 @@ const get72Kou = (date: Date): string => {
     if (md <= 1007) return "秋分：水始涸（みずはじめてかる）";
     if (md <= 1012) return "寒露：鴻雁来（こうがんきたる）";
     if (md <= 1017) return "寒露：菊花開（きくのはなひらく）";
-    if (md <= 1022) return "寒露：蟋蟀在戸(きりぎりすとにあり)";
+    if (md <= 1022) return "寒露：開（きくのはなひらく）";
     if (md <= 1027) return "霜降：霜始降（しもはじめてふる）";
     if (md <= 1101) return "霜降：霎時施（こさめときどきふる）";
     if (md <= 1106) return "霜降：楓蔦黄（もみじつたきばむ）";
@@ -134,10 +142,25 @@ const get72Kou = (date: Date): string => {
 // ユーティリティー
 // ============================================
 const getWeatherInfo = (code: number): { text: string; icon: ReactNode } => {
-    if (code === 0) return { text: "ぴかぴか快晴", icon: <WiDaySunny style={{ color: "#ff9f43" }} /> };
-    if (code <= 3) return { text: "はれ・くもり", icon: <WiCloudy style={{ color: "#54a0ff" }} /> };
-    if (code >= 61 && code <= 65) return { text: "あめのひ", icon: <WiRain style={{ color: "#5ea3ff" }} /> };
-    return { text: "おそらのご機嫌斜め", icon: <WiCloudy style={{ color: "#8395a7" }} /> };
+    if (code === 0)
+        return {
+            text: "ぴかぴか快晴",
+            icon: <WiDaySunny style={{ color: "#ff9f43" }} />,
+        };
+    if (code <= 3)
+        return {
+            text: "晴れ / 曇り",
+            icon: <WiCloudy style={{ color: "#54a0ff" }} />,
+        };
+    if (code >= 61 && code <= 65)
+        return {
+            text: "雨",
+            icon: <WiRain style={{ color: "#5ea3ff" }} />,
+        };
+    return {
+        text: "お空のご機嫌斜め",
+        icon: <WiCloudy style={{ color: "#8395a7" }} />,
+    };
 };
 
 const formatDate = (dateString: string): string => {
@@ -145,8 +168,14 @@ const formatDate = (dateString: string): string => {
     return `${d.getMonth() + 1}月${d.getDate()}日`;
 };
 
+const getDayOfWeek = (dateString: string): string => {
+    const days = ["日", "月", "火", "水", "木", "金", "土"];
+    const d = new Date(dateString);
+    return days[d.getDay()];
+};
+
 // ============================================
-// コンポーネント
+// サブコンポーネント
 // ============================================
 const DataCard = ({
     icon,
@@ -161,10 +190,12 @@ const DataCard = ({
 }) => (
     <div style={styles.card}>
         <div style={styles.cardTitleLine}>
-            <span style={{ 
-                ...styles.cardIconBadge, 
-                backgroundColor: badgeColor || "#f0f3f6" 
-            }}>
+            <span
+                style={{
+                    ...styles.cardIconBadge,
+                    backgroundColor: badgeColor || "#f0f3f6",
+                }}
+            >
                 {icon}
             </span>
             <span style={styles.cardLabel}>{label}</span>
@@ -173,13 +204,19 @@ const DataCard = ({
     </div>
 );
 
+// ============================================
+// メインコンポーネント
+// ============================================
 export default function App() {
     const [summary, setSummary] = useState<TomorrowSummary | null>(null);
-    const [errorMsg, setErrorMsg] = useState<string | null>(
-        typeof navigator !== "undefined" && !navigator.geolocation 
-            ? "GPSがつかえませんでした 😢" 
-            : null
-    );
+    const [weeklyList, setWeeklyList] = useState<DailyForecast[]>([]);
+
+    const [errorMsg, setErrorMsg] = useState<string | null>(() => {
+        if (typeof navigator === "undefined" || !navigator.geolocation) {
+            return "GPSがつかえませんでした 😢";
+        }
+        return null;
+    });
 
     useEffect(() => {
         if (errorMsg) return;
@@ -187,38 +224,76 @@ export default function App() {
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 const { latitude, longitude } = pos.coords;
-                const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max,wind_speed_10m_max&hourly=visibility,wind_speed_10m&timezone=Asia%2FTokyo&forecast_days=2`;
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max,wind_speed_10m_max&hourly=visibility,wind_speed_10m&timezone=Asia%2FTokyo&forecast_days=7`;
 
                 fetch(url)
                     .then((res) => res.json())
                     .then((data: OpenMeteoResponse) => {
-                        const tomorrowWinds = data.hourly.wind_speed_10m.slice(24, 48);
-                        const avgWind = tomorrowWinds.reduce((a, b) => a + b, 0) / 24;
-                
+                        const tomorrowWinds = data.hourly.wind_speed_10m.slice(
+                            24,
+                            48,
+                        );
+                        const avgWind =
+                            tomorrowWinds.reduce((a, b) => a + b, 0) / 24;
+
                         setSummary({
                             date: data.daily.time[1],
                             weatherCode: data.daily.weather_code[1],
                             tempMax: data.daily.temperature_2m_max[1],
                             tempMin: data.daily.temperature_2m_min[1],
-                            precipProb: data.daily.precipitation_probability_max[1],
-                            windAvg: avgWind, 
+                            precipProb:
+                                data.daily.precipitation_probability_max[1],
+                            windAvg: avgWind,
                             uvMax: data.daily.uv_index_max[1],
                             sunrise: data.daily.sunrise[1].split("T")[1],
                             sunset: data.daily.sunset[1].split("T")[1],
                             visibilityAvg:
                                 data.hourly.visibility
                                     .slice(24, 48)
-                                    .reduce((a, b) => a + b, 0) / 24 / 1000,
+                                    .reduce((a, b) => a + b, 0) /
+                                24 /
+                                1000,
                         });
+
+                        const forecasts: DailyForecast[] = data.daily.time.map(
+                            (timeStr, idx) => ({
+                                date: timeStr,
+                                weatherCode: data.daily.weather_code[idx],
+                                tempMax: data.daily.temperature_2m_max[idx],
+                                tempMin: data.daily.temperature_2m_min[idx],
+                                precipProb:
+                                    data.daily.precipitation_probability_max[
+                                        idx
+                                    ],
+                            }),
+                        );
+                        setWeeklyList(forecasts);
                     })
-                    .catch(() => setErrorMsg("お天気データの取得に失敗しちゃいました"));
+                    .catch(() =>
+                        setErrorMsg("お天気データの取得に失敗しちゃいました"),
+                    );
             },
             () => setErrorMsg("位置情報の許可をお願いします 🙏"),
         );
     }, [errorMsg]);
 
-    if (errorMsg) return <div style={styles.loaderContainer}><div style={styles.errorBox}>{errorMsg}</div></div>;
-    if (!summary) return <div style={styles.loaderContainer}><div style={styles.loadingBox}>🧭 探検の準備中（GPS測位中）...</div></div>;
+    if (errorMsg) {
+        return (
+            <div style={styles.loaderContainer}>
+                <div style={styles.errorBox}>{errorMsg}</div>
+            </div>
+        );
+    }
+
+    if (!summary) {
+        return (
+            <div style={styles.loaderContainer}>
+                <div style={styles.loadingBox}>
+                    🧭 探検の準備中（GPS測位中）...
+                </div>
+            </div>
+        );
+    }
 
     const isGoodCondition = summary.windAvg < 5 && summary.precipProb < 30;
     const weather = getWeatherInfo(summary.weatherCode);
@@ -230,7 +305,7 @@ export default function App() {
                 <header style={styles.header}>
                     <div style={styles.locationLine}>
                         <IoLocationSharp style={{ color: "#10ac84" }} />
-                        <span>みつけて、よりみち。いまココ付近の予報</span>
+                        <span>いまココ付近の予報</span>
                     </div>
                     <div style={styles.titleLine}>
                         <h1 style={styles.title}>
@@ -244,86 +319,202 @@ export default function App() {
                 <div
                     style={{
                         ...styles.judgeCard,
-                        backgroundColor: isGoodCondition ? "#ebfbee" : "#fff5f5",
+                        backgroundColor: isGoodCondition
+                            ? "#ebfbee"
+                            : "#fff5f5",
                         borderColor: isGoodCondition ? "#10ac84" : "#ff6b6b",
                     }}
                 >
                     <span
                         style={{
                             ...styles.judgeStatus,
-                            backgroundColor: isGoodCondition ? "#10ac84" : "#ff6b6b",
+                            backgroundColor: isGoodCondition
+                                ? "#10ac84"
+                                : "#ff6b6b",
                         }}
                     >
                         {isGoodCondition ? "Let's Go! 🦜" : "Caution ☔"}
                     </span>
-                    <p style={{
-                        ...styles.judgeText,
-                        color: isGoodCondition ? "#0f7654" : "#c92a2a"
-                    }}>
-                        {isGoodCondition ? "野鳥かんさつ日和！" : "少し注意が必要"}
+                    <p
+                        style={{
+                            ...styles.judgeText,
+                            color: isGoodCondition ? "#0f7654" : "#c92a2a",
+                        }}
+                    >
+                        {/*{isGoodCondition
+                            ? "野鳥かんさつ日和！"
+                            : "少し注意が必要"}*/}
                     </p>
                     <div style={styles.weatherLarge}>
-                        <span style={styles.largeIconWrapper}>{weather.icon}</span>
-                        <span style={{ fontWeight: "800", color: "#2c3e50" }}>{weather.text}</span>
+                        <span style={styles.largeIconWrapper}>
+                            {weather.icon}
+                        </span>
+                        <span style={{ fontWeight: "800", color: "#2c3e50" }}>
+                            {weather.text}
+                        </span>
                     </div>
                 </div>
 
                 <div style={styles.grid}>
                     <DataCard
-                        icon={<WiThermometer style={{ fontSize: "1.6rem", color: "#ff6b6b" }} />}
+                        icon={
+                            <WiThermometer
+                                style={{ fontSize: "1.6rem", color: "#ff6b6b" }}
+                            />
+                        }
                         label="最高気温"
                         value={`${summary.tempMax}°C`}
                         badgeColor="#ffe3e3"
                     />
                     <DataCard
-                        icon={<WiThermometerExterior style={{ fontSize: "1.6rem", color: "#228be6" }} />}
+                        icon={
+                            <WiThermometerExterior
+                                style={{ fontSize: "1.6rem", color: "#228be6" }}
+                            />
+                        }
                         label="最低気温"
                         value={`${summary.tempMin}°C`}
                         badgeColor="#e7f5ff"
                     />
                     <DataCard
-                        icon={<WiUmbrella style={{ fontSize: "1.6rem", color: "#4c6ef5" }} />}
+                        icon={
+                            <WiUmbrella
+                                style={{ fontSize: "1.6rem", color: "#4c6ef5" }}
+                            />
+                        }
                         label="降水確率"
                         value={`${summary.precipProb}%`}
                         badgeColor="#edf2ff"
                     />
                     <DataCard
-                        icon={<WiStrongWind style={{ fontSize: "1.6rem", color: "#0b7285" }} />}
+                        icon={
+                            <WiStrongWind
+                                style={{ fontSize: "1.6rem", color: "#0b7285" }}
+                            />
+                        }
                         label="平均風速"
                         value={`${summary.windAvg.toFixed(1)}m/s`}
                         badgeColor="#e3fafc"
                     />
                     <DataCard
-                        icon={<WiSunrise style={{ fontSize: "1.6rem", color: "#f59f00" }} />}
+                        icon={
+                            <WiSunrise
+                                style={{ fontSize: "1.6rem", color: "#f59f00" }}
+                            />
+                        }
                         label="日の出"
                         value={summary.sunrise}
                         badgeColor="#fff9db"
                     />
                     <DataCard
-                        icon={<WiSunset style={{ fontSize: "1.6rem", color: "#e8590c" }} />}
+                        icon={
+                            <WiSunset
+                                style={{ fontSize: "1.6rem", color: "#e8590c" }}
+                            />
+                        }
                         label="日の入り"
                         value={summary.sunset}
                         badgeColor="#fff4e6"
                     />
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "16px" }}>
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "16px",
+                        marginTop: "16px",
+                    }}
+                >
                     <DataCard
-                        icon={<WiDaySunny style={{ fontSize: "1.6rem", color: "#cc5de8" }} />}
+                        icon={
+                            <WiDaySunny
+                                style={{ fontSize: "1.6rem", color: "#cc5de8" }}
+                            />
+                        }
                         label="最大紫外線"
                         value={`${summary.uvMax}`}
                         badgeColor="#f8f0fc"
                     />
                     <DataCard
-                        icon={<WiHorizonAlt style={{ fontSize: "1.6rem", color: "#37b24d" }} />}
+                        icon={
+                            <WiHorizonAlt
+                                style={{ fontSize: "1.6rem", color: "#37b24d" }}
+                            />
+                        }
                         label="見わたせる距離"
                         value={`${summary.visibilityAvg.toFixed(1)}km`}
                         badgeColor="#ebfbee"
                     />
                 </div>
 
+                <section style={styles.weeklySection}>
+                    <h2 style={styles.weeklyTitle}>🗓️ 一週間の予報</h2>
+                    <div style={styles.weeklyList}>
+                        {weeklyList.map((day, idx) => {
+                            const dayWeather = getWeatherInfo(day.weatherCode);
+                            const isToday = idx === 0;
+                            const isTomorrow = idx === 1;
+                            let dateLabel = formatDate(day.date);
+                            if (isToday) dateLabel = "きょう";
+                            if (isTomorrow) dateLabel = "あした";
+
+                            // 最後の行だけ下線を引かないように調整
+                            const isLast = idx === weeklyList.length - 1;
+                            const rowStyle = {
+                                ...styles.weeklyRow,
+                                borderBottom: isLast
+                                    ? "none"
+                                    : styles.weeklyRow.borderBottom,
+                            };
+
+                            return (
+                                <div key={day.date} style={rowStyle}>
+                                    <div style={styles.weeklyDateBlock}>
+                                        <span style={styles.weeklyDateText}>
+                                            {dateLabel}
+                                        </span>
+                                        {!isToday && !isTomorrow && (
+                                            <span
+                                                style={styles.weeklyDayOfWeek}
+                                            >
+                                                ({getDayOfWeek(day.date)})
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div style={styles.weeklyIconBlock}>
+                                        {dayWeather.icon}
+                                    </div>
+                                    <div style={styles.weeklyPrecipBlock}>
+                                        <span
+                                            style={{
+                                                color: "#7f8c8d",
+                                                fontSize: "0.75rem",
+                                            }}
+                                        >
+                                            ☔
+                                        </span>
+                                        <span style={styles.weeklyPrecipText}>
+                                            {day.precipProb}%
+                                        </span>
+                                    </div>
+                                    <div style={styles.weeklyTempBlock}>
+                                        <span style={styles.weeklyTempMax}>
+                                            {Math.round(day.tempMax)}°
+                                        </span>
+                                        /
+                                        <span style={styles.weeklyTempMin}>
+                                            {Math.round(day.tempMin)}°
+                                        </span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+
                 <footer style={styles.footer}>
-                    <p>🪶 BirdWeather v1.2 — お気に入りの双眼鏡を持っていこう！</p>
+                    <p>🪶 BirdWeather v1.3</p>
                 </footer>
             </div>
         </div>
@@ -331,14 +522,14 @@ export default function App() {
 }
 
 // ============================================
-// スタイル（北欧ポップ & ぽってり可愛いトーン）
+// スタイル定義
 // ============================================
 const styles: { [key: string]: React.CSSProperties } = {
     container: {
         padding: "24px 16px",
-        backgroundColor: "#f9f6f0", // やさしいアイボリー
-        color: "#2c3e50", // 柔らかい墨色
-        fontFamily: "'Segoe UI', Roboto, 'Helvetica Neue', 'Meiryo', sans-serif",
+        backgroundColor: "#f9f6f0",
+        color: "#2c3e50",
+        fontFamily: "sans-serif",
         minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
@@ -350,7 +541,6 @@ const styles: { [key: string]: React.CSSProperties } = {
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        fontFamily: "sans-serif",
     },
     loadingBox: {
         padding: "20px 30px",
@@ -359,7 +549,6 @@ const styles: { [key: string]: React.CSSProperties } = {
         border: "3px solid #2c3e50",
         boxShadow: "4px 4px 0px #2c3e50",
         fontWeight: "bold",
-        color: "#2c3e50",
     },
     errorBox: {
         padding: "20px 30px",
@@ -370,17 +559,13 @@ const styles: { [key: string]: React.CSSProperties } = {
         color: "#f03e3e",
     },
     contentWrapper: { width: "100%", maxWidth: "480px" },
-    header: {
-        marginBottom: "24px",
-        paddingBottom: "12px",
-    },
+    header: { marginBottom: "24px" },
     locationLine: {
         display: "flex",
         alignItems: "center",
         gap: "6px",
         fontSize: "0.85rem",
         color: "#7f8c8d",
-        fontWeight: "600",
     },
     titleLine: {
         display: "flex",
@@ -391,55 +576,53 @@ const styles: { [key: string]: React.CSSProperties } = {
     title: {
         fontSize: "1.8rem",
         fontWeight: "900",
-        color: "#2c3e50",
         margin: 0,
         display: "flex",
         alignItems: "center",
         gap: "8px",
     },
-    seasonText: { 
-        fontSize: "0.9rem", 
-        color: "#10ac84", 
+    seasonText: {
+        fontSize: "0.9rem",
+        color: "#10ac84",
         fontWeight: "700",
         backgroundColor: "#e3faf2",
         padding: "6px 12px",
         borderRadius: "20px",
         alignSelf: "flex-start",
-        marginTop: "4px"
     },
     judgeCard: {
         padding: "24px",
         marginBottom: "24px",
         borderRadius: "20px",
         border: "3px solid #2c3e50",
-        boxShadow: "5px 5px 0px #2c3e50", // ポップな不透過シャドウ
+        boxShadow: "5px 5px 0px #2c3e50",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        position: "relative",
-        overflow: "hidden"
     },
     judgeStatus: {
         fontSize: "0.75rem",
         fontWeight: "900",
-        textTransform: "uppercase",
         color: "#fff",
         padding: "4px 14px",
         borderRadius: "12px",
-        letterSpacing: "1px",
     },
-    judgeText: { fontSize: "1.6rem", fontWeight: "900", margin: "12px 0 6px 0", textAlign: "center" },
+    judgeText: {
+        fontSize: "1.6rem",
+        fontWeight: "900",
+        margin: "12px 0 6px 0",
+        textAlign: "center",
+    },
     weatherLarge: {
         display: "flex",
         alignItems: "center",
         gap: "10px",
         fontSize: "2rem",
-        marginTop: "8px"
     },
     largeIconWrapper: {
         fontSize: "3.5rem",
         display: "flex",
-        alignItems: "center"
+        alignItems: "center",
     },
     grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" },
     card: {
@@ -448,15 +631,8 @@ const styles: { [key: string]: React.CSSProperties } = {
         border: "3px solid #2c3e50",
         borderRadius: "16px",
         boxShadow: "3px 3px 0px #2c3e50",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between"
     },
-    cardTitleLine: {
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-    },
+    cardTitleLine: { display: "flex", alignItems: "center", gap: "8px" },
     cardIconBadge: {
         display: "flex",
         alignItems: "center",
@@ -466,23 +642,69 @@ const styles: { [key: string]: React.CSSProperties } = {
         borderRadius: "10px",
         border: "2px solid #2c3e50",
     },
-    cardLabel: {
-        color: "#7f8c8d",
-        fontSize: "0.85rem",
-        fontWeight: "700"
+    cardLabel: { color: "#7f8c8d", fontSize: "0.85rem" },
+    cardValue: { fontSize: "1.6rem", fontWeight: "900", margin: "12px 0 0 0" },
+    weeklySection: { marginTop: "32px" },
+    weeklyTitle: {
+        fontSize: "1.2rem",
+        fontWeight: "900",
+        marginBottom: "16px",
     },
-    cardValue: { 
-        fontSize: "1.6rem", 
-        fontWeight: "900", 
-        margin: "12px 0 0 0",
-        color: "#2c3e50",
-        fontVariantNumeric: "tabular-nums"
+    weeklyList: {
+        backgroundColor: "#fff",
+        border: "3px solid #2c3e50",
+        borderRadius: "20px",
+        padding: "12px 16px",
     },
+    // 🛠️ 【修正箇所】縦のズレを無くし、均等配置にするためのスタイル定義
+    weeklyRow: {
+        display: "grid",
+        // 日付・アイコン・降水確率・気温の各ブロック幅を明示的に固定、または最小・最大幅を定義
+        gridTemplateColumns: "110px 70px 100px 1fr",
+        alignItems: "center",
+        padding: "12px 0",
+        borderBottom: "1px dashed #e2e8f0",
+    },
+    weeklyDateBlock: {
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        justifyContent: "flex-start",
+    },
+    weeklyDateText: { fontWeight: "700", fontSize: "0.95rem" },
+    weeklyDayOfWeek: { fontSize: "0.8rem", color: "#7f8c8d" },
+    weeklyIconBlock: {
+        display: "flex",
+        justifyContent: "center", // アイコンを列の中央に
+        alignItems: "center",
+        fontSize: "1.8rem",
+    },
+    weeklyPrecipBlock: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end", // 降水確率は右寄せにして数値の桁ズレに対応
+        gap: "4px",
+        paddingRight: "8px",
+    },
+    weeklyPrecipText: {
+        fontSize: "0.9rem",
+        fontWeight: "700",
+        color: "#4c6ef5",
+        width: "35px", // 2桁+「%」がブレない幅
+        textAlign: "right",
+    },
+    weeklyTempBlock: {
+        display: "flex",
+        justifyContent: "flex-end", // 気温は一番右側に寄せる
+        gap: "12px",
+        fontWeight: "800",
+    },
+    weeklyTempMax: { color: "#ff6b6b", width: "30px", textAlign: "right" },
+    weeklyTempMin: { color: "#228be6", width: "30px", textAlign: "right" },
     footer: {
         marginTop: "40px",
         textAlign: "center",
         fontSize: "0.8rem",
         color: "#95a5a6",
-        fontWeight: "600"
     },
 };
