@@ -660,7 +660,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     weeklyRow: {
         display: "grid",
         // 日付・アイコン・降水確率・気温の各ブロック幅を明示的に固定、または最小・最大幅を定義
-        gridTemplateColumns: "110px 70px 100px 1fr",
+        gridTemplateColumns: "2fr 1fr 1fr 2fr",
         alignItems: "center",
         padding: "12px 0",
         borderBottom: "1px dashed #e2e8f0",
