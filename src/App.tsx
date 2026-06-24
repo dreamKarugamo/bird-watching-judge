@@ -35,7 +35,7 @@ interface OpenMeteoResponse {
     };
 }
 
-interface TomorrowSummary {
+interface TodaySummary {
     date: string;
     weatherCode: number;
     tempMax: number;
@@ -208,7 +208,7 @@ const DataCard = ({
 // メインコンポーネント
 // ============================================
 export default function App() {
-    const [summary, setSummary] = useState<TomorrowSummary | null>(null);
+    const [summary, setSummary] = useState<TodaySummary | null>(null);
     const [weeklyList, setWeeklyList] = useState<DailyForecast[]>([]);
 
     const [errorMsg, setErrorMsg] = useState<string | null>(() => {
@@ -229,27 +229,26 @@ export default function App() {
                 fetch(url)
                     .then((res) => res.json())
                     .then((data: OpenMeteoResponse) => {
-                        const tomorrowWinds = data.hourly.wind_speed_10m.slice(
-                            24,
-                            48,
-                        );
+                        // 🛠️ 【修正】明日の24〜48時間から、今日の0〜24時間に変更
+                        const todayWinds = data.hourly.wind_speed_10m.slice(0, 24);
                         const avgWind =
-                            tomorrowWinds.reduce((a, b) => a + b, 0) / 24;
+                            todayWinds.reduce((a, b) => a + b, 0) / 24;
 
+                        // 🛠️ 【修正】インデックスを 1 (明日) から 0 (今日) に変更
                         setSummary({
-                            date: data.daily.time[1],
-                            weatherCode: data.daily.weather_code[1],
-                            tempMax: data.daily.temperature_2m_max[1],
-                            tempMin: data.daily.temperature_2m_min[1],
+                            date: data.daily.time[0],
+                            weatherCode: data.daily.weather_code[0],
+                            tempMax: data.daily.temperature_2m_max[0],
+                            tempMin: data.daily.temperature_2m_min[0],
                             precipProb:
-                                data.daily.precipitation_probability_max[1],
+                                data.daily.precipitation_probability_max[0],
                             windAvg: avgWind,
-                            uvMax: data.daily.uv_index_max[1],
-                            sunrise: data.daily.sunrise[1].split("T")[1],
-                            sunset: data.daily.sunset[1].split("T")[1],
+                            uvMax: data.daily.uv_index_max[0],
+                            sunrise: data.daily.sunrise[0].split("T")[1],
+                            sunset: data.daily.sunset[0].split("T")[1],
                             visibilityAvg:
                                 data.hourly.visibility
-                                    .slice(24, 48)
+                                    .slice(0, 24) // 🛠️ 【修正】ここも今日(0〜24時間)に変更
                                     .reduce((a, b) => a + b, 0) /
                                 24 /
                                 1000,
@@ -459,7 +458,6 @@ export default function App() {
                             if (isToday) dateLabel = "きょう";
                             if (isTomorrow) dateLabel = "あした";
 
-                            // 最後の行だけ下線を引かないように調整
                             const isLast = idx === weeklyList.length - 1;
                             const rowStyle = {
                                 ...styles.weeklyRow,
@@ -514,7 +512,7 @@ export default function App() {
                 </section>
 
                 <footer style={styles.footer}>
-                    <p>🪶 BirdWeather v1.3</p>
+                    <p>🪶 BirdWeather v2.1</p>
                 </footer>
             </div>
         </div>
@@ -656,10 +654,8 @@ const styles: { [key: string]: React.CSSProperties } = {
         borderRadius: "20px",
         padding: "12px 16px",
     },
-    // 🛠️ 【修正箇所】縦のズレを無くし、均等配置にするためのスタイル定義
     weeklyRow: {
         display: "grid",
-        // 日付・アイコン・降水確率・気温の各ブロック幅を明示的に固定、または最小・最大幅を定義
         gridTemplateColumns: "2fr 0.5fr 1.5fr 2fr",
         alignItems: "center",
         padding: "12px 0",
@@ -675,14 +671,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     weeklyDayOfWeek: { fontSize: "0.8rem", color: "#7f8c8d" },
     weeklyIconBlock: {
         display: "flex",
-        justifyContent: "center", // アイコンを列の中央に
+        justifyContent: "center",
         alignItems: "center",
         fontSize: "1.8rem",
     },
     weeklyPrecipBlock: {
         display: "flex",
         alignItems: "center",
-        justifyContent: "flex-end", // 降水確率は右寄せにして数値の桁ズレに対応
+        justifyContent: "flex-end",
         gap: "4px",
         paddingRight: "8px",
     },
@@ -690,12 +686,12 @@ const styles: { [key: string]: React.CSSProperties } = {
         fontSize: "0.9rem",
         fontWeight: "700",
         color: "#4c6ef5",
-        width: "35px", // 2桁+「%」がブレない幅
+        width: "35px",
         textAlign: "right",
     },
     weeklyTempBlock: {
         display: "flex",
-        justifyContent: "flex-end", // 気温は一番右側に寄せる
+        justifyContent: "flex-end",
         gap: "12px",
         fontWeight: "800",
     },
